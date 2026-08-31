@@ -1,0 +1,20 @@
+# Segredos / config local
+.env
+extension/config.js
+
+# Dados de runtime (arquivos baixados, temporarios)
+data/downloads/*
+data/tmp/*
+!data/downloads/.gitkeep
+!data/tmp/.gitkeep
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
+
+# Editor / SO
+.DS_Store
+*.swp

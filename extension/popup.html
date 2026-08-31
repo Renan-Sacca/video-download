@@ -1,0 +1,57 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <title>Video Downloader</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <main class="container">
+    <header class="header">
+      <h1>Video Downloader</h1>
+    </header>
+
+    <section class="field">
+      <label for="video-url">URL atual</label>
+      <input type="text" id="video-url" readonly />
+    </section>
+
+    <button id="btn-analyze" class="btn btn-primary">Analisar</button>
+
+    <p id="status-message" class="status-message" hidden></p>
+
+    <section id="video-info" class="video-info" hidden>
+      <img id="video-thumbnail" class="thumbnail" alt="Thumbnail do video" />
+      <h2 id="video-title" class="video-title"></h2>
+
+      <div class="field">
+        <label for="quality-select">Qualidade</label>
+        <select id="quality-select"></select>
+      </div>
+
+      <div class="field">
+        <label for="format-select">Formato</label>
+        <select id="format-select">
+          <option value="mp4">MP4</option>
+          <option value="webm">WebM</option>
+          <option value="mp3">MP3 (audio)</option>
+          <option value="m4a">M4A (audio)</option>
+        </select>
+      </div>
+
+      <button id="btn-download" class="btn btn-success">BAIXAR</button>
+    </section>
+
+    <section id="progress-section" class="progress-section" hidden>
+      <p id="progress-label" class="progress-label">Progresso:</p>
+      <div class="progress-bar">
+        <div id="progress-fill" class="progress-fill"></div>
+      </div>
+      <p id="progress-percent" class="progress-percent">0%</p>
+    </section>
+  </main>
+
+  <script src="config.js"></script>
+  <script src="popup.js"></script>
+</body>
+</html>

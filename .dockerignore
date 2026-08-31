@@ -1,0 +1,9 @@
+.git
+.gitignore
+.env
+.env.example
+data/
+extension/
+README.md
+**/__pycache__/
+**/*.pyc

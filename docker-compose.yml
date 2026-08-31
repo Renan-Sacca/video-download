@@ -1,0 +1,66 @@
+services:
+
+  api:
+    build: .
+    container_name: video-downloader-api
+    restart: unless-stopped
+
+    env_file:
+      - .env
+
+    environment:
+      - DOWNLOAD_DIR=/data/downloads
+      - TMP_DIR=/data/tmp
+      - REDIS_URL=redis://video-downloader-redis:6379/0
+
+    volumes:
+      - downloads-data:/data/downloads
+      - tmp-data:/data/tmp
+
+    depends_on:
+      redis:
+        condition: service_healthy
+
+    labels:
+      - "traefik.enable=true"
+
+      - "traefik.http.routers.videodl.rule=Host(`${API_DOMAIN}`)"
+      - "traefik.http.routers.videodl.entrypoints=websecure"
+      - "traefik.http.routers.videodl.tls.certresolver=letsencrypt"
+
+      - "traefik.http.services.videodl.loadbalancer.server.port=8000"
+      - "traefik.docker.network=proxy"
+
+    networks:
+      - proxy
+      - internal
+
+  redis:
+    image: redis:7.2-alpine
+    container_name: video-downloader-redis
+    restart: unless-stopped
+    command: ["redis-server", "--save", "", "--appendonly", "no"]
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+    networks:
+      - internal
+
+volumes:
+  downloads-data:
+    external: false
+  tmp-data:
+    external: false
+  redis-data:
+    external: false
+
+networks:
+  proxy:
+    external: true
+  internal:
+    external: false
