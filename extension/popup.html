@@ -16,7 +16,12 @@
       <input type="text" id="video-url" readonly />
     </section>
 
-    <button id="btn-analyze" class="btn btn-primary">Analisar</button>
+    <section id="detected-media" class="detected-media" hidden>
+      <p class="detected-media-title">Videos detectados nesta pagina:</p>
+      <div id="detected-media-list" class="detected-media-list"></div>
+    </section>
+
+    <button id="btn-analyze" class="btn btn-primary">Analisar URL atual</button>
 
     <p id="status-message" class="status-message" hidden></p>
 
@@ -40,11 +45,6 @@
       </div>
 
       <button id="btn-download" class="btn btn-success">BAIXAR</button>
-    </section>
-
-    <section id="detected-media" class="detected-media" hidden>
-      <p class="detected-media-title">Videos detectados no trafego da pagina:</p>
-      <div id="detected-media-list" class="detected-media-list"></div>
     </section>
 
     <section id="progress-section" class="progress-section" hidden>

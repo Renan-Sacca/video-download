@@ -187,21 +187,25 @@ globalThis.VIDEODL_CONFIG = {
 
 ### 2.3. Uso
 
-1. Abra uma página com um vídeo suportado.
+1. Abra uma página com um vídeo e dê play (para que o player carregue o
+   stream de mídia).
 2. Clique no ícone da extensão — a URL da aba atual é preenchida
-   automaticamente.
-3. Clique em **Analisar**: a extensão chama `POST /api/info` e mostra
-   título, thumbnail e qualidades disponíveis.
-   - Se a página não for suportada diretamente pelo yt-dlp (comum em sites
-     que embutem o player em um iframe de terceiros, ex: Blogger, com
-     extrator desatualizado), a extensão mostra uma lista de "Vídeos
-     detectados no tráfego da página" — URLs de mídia (.mp4/.m3u8/.mpd) que
-     o próprio navegador já carregou em texto claro ao reproduzir o vídeo.
-     Clique em "Usar essa URL" para analisar/baixar por ela. Isso só
-     funciona para mídia servida sem criptografia (a grande maioria dos
-     sites); vídeo com DRM real (Widevine/FairPlay) chega cifrado e uma URL
-     sozinha não é suficiente para reproduzi-lo — este projeto não inclui
-     nem pretende incluir suporte a esse tipo de conteúdo.
+   automaticamente, e **imediatamente**, sem precisar clicar em nada, a
+   extensão mostra a lista "Vídeos detectados nesta página": as URLs de
+   mídia (.mp4/.m3u8/.mpd) que o navegador já carregou em texto claro para
+   reproduzir o vídeo. Cada item tem dois botões:
+   - **Baixar**: baixa direto essa URL na melhor qualidade disponível (MP4),
+     sem etapas extras.
+   - **Analisar**: analisa essa URL específica antes, para você escolher
+     qualidade/formato manualmente.
+   Isso só funciona para mídia servida sem criptografia (a grande maioria
+   dos sites); vídeo com DRM real (Widevine/FairPlay) chega cifrado e uma
+   URL sozinha não é suficiente para reproduzi-lo — este projeto não inclui
+   nem pretende incluir suporte a esse tipo de conteúdo.
+3. Alternativamente, clique em **Analisar URL atual** para tentar extrair
+   direto da URL da página (funciona quando o site tem suporte nativo no
+   yt-dlp, sem precisar do fallback acima) — mostra título, thumbnail e
+   qualidades disponíveis.
 4. Escolha qualidade e formato, clique em **BAIXAR**.
 5. A extensão chama `POST /api/download`, recebe um `job_id` e delega o
    acompanhamento ao `background.js` (service worker), que faz polling em
@@ -210,9 +214,16 @@ globalThis.VIDEODL_CONFIG = {
    `chrome.downloads.download()` com a `download_url` retornada, e o Chrome
    salva o arquivo normalmente na pasta de downloads do usuário.
 
-O progresso é refletido na barra de progresso do popup mesmo se ele for
-fechado e reaberto durante o download (o estado do job vive no service
-worker enquanto ele estiver ativo).
+**Persistência do progresso**: o Chrome encerra o service worker da
+extensão após ~30s de inatividade ou por pressão de memória (minimizar a
+janela, por exemplo, pode disparar isso). Para que o progresso do download
+e os vídeos detectados não se percam quando isso acontece, ambos são
+persistidos em `chrome.storage.session` (sobrevive a reinícios do service
+worker, só é limpo quando o navegador fecha de fato) em vez de ficarem só
+em memória. Um `chrome.alarms` periódico (a cada 1 minuto, o mínimo
+permitido pelo Chrome) acorda o worker e retoma o polling de qualquer job
+ainda ativo, e o popup recupera o último job da aba atual sempre que é
+reaberto.
 
 ## 3. Formatos e qualidade
 
@@ -243,7 +254,8 @@ worker enquanto ele estiver ativo).
 
 A extensão pede `<all_urls>` + `webRequest` para poder observar, em
 qualquer aba, as requisições de rede que já ocorrem normalmente ao
-carregar um player de vídeo (usado apenas no fallback descrito na seção 2.3).
-Nenhuma URL de rede é enviada a nenhum lugar além da sua própria API
-configurada em `config.js`; a extensão não coleta nem transmite seu
-histórico de navegação.
+carregar um player de vídeo (usado pela detecção descrita na seção 2.3), e
+`alarms` para conseguir retomar o acompanhamento de downloads após o
+service worker ser encerrado por inatividade. Nenhuma URL de rede é enviada
+a nenhum lugar além da sua própria API configurada em `config.js`; a
+extensão não coleta nem transmite seu histórico de navegação.

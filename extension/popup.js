@@ -1,10 +1,13 @@
 // Logica da interface do popup:
 // 1. pega a URL da aba atual
-// 2. envia para /api/info ao clicar em "Analisar"
-// 3. mostra titulo, thumbnail e formatos disponiveis
-// 4. ao clicar em "Baixar", envia para /api/download e acompanha o job_id
-//    (delegando o polling ao background.js, que continua rodando mesmo se
-//    o popup for fechado)
+// 2. mostra imediatamente qualquer video detectado no trafego de rede da
+//    pagina (fallback para sites que o yt-dlp nao suporta diretamente)
+// 3. envia para /api/info ao clicar em "Analisar"
+// 4. mostra titulo, thumbnail e formatos disponiveis
+// 5. ao clicar em "Baixar", envia para /api/download e acompanha o job_id
+//    (delegando o polling ao background.js, que persiste o estado em
+//    chrome.storage.session - assim o progresso sobrevive a reinicios do
+//    service worker e a reaberturas do popup, ex: apos minimizar a janela)
 
 const { API_BASE_URL, API_KEY } = window.VIDEODL_CONFIG;
 
@@ -64,18 +67,20 @@ async function getCurrentTab() {
   return tab || null;
 }
 
-async function analyzeVideo() {
+async function analyzeVideo(overrideUrl) {
   clearError();
-  const url = els.url.value.trim();
+  const url = (overrideUrl || els.url.value).trim();
   if (!url) {
     showError("Nenhuma URL encontrada na aba atual.");
     return;
+  }
+  if (overrideUrl) {
+    els.url.value = overrideUrl;
   }
 
   setBusy(els.btnAnalyze, true);
   els.btnAnalyze.textContent = "Analisando...";
   els.videoInfo.hidden = true;
-  els.detectedMedia.hidden = true;
 
   try {
     const res = await fetch(`${API_BASE_URL}/api/info`, {
@@ -88,10 +93,6 @@ async function analyzeVideo() {
 
     if (!res.ok) {
       showError(data.detail || `Erro ao analisar o video (HTTP ${res.status}).`);
-      // Fallback: o site pode nao ser suportado diretamente (ex: player em
-      // iframe de terceiros com extrator desatualizado). Mostra os videos
-      // que o navegador ja carregou de verdade na aba, para download manual.
-      await showDetectedMediaFallback();
       return;
     }
 
@@ -99,7 +100,7 @@ async function analyzeVideo() {
   } catch (err) {
     showError("Nao foi possivel conectar a API. Verifique a URL configurada e sua conexao.");
   } finally {
-    setBusy(els.btnAnalyze, false, "Analisar");
+    setBusy(els.btnAnalyze, false, "Analisar URL atual");
   }
 }
 
@@ -115,7 +116,11 @@ function formatBytes(bytes) {
   return `${size.toFixed(1)} ${units[i]}`;
 }
 
-async function showDetectedMediaFallback() {
+// Mostra, direto ao abrir o popup (sem precisar clicar em "Analisar"
+// antes), os videos que a extensao ja detectou no trafego de rede da aba
+// atual. Util para sites que o yt-dlp nao consegue extrair diretamente da
+// URL da pagina (player embutido em iframe de terceiros, por exemplo).
+async function refreshDetectedMedia() {
   if (!currentTabId) return;
 
   const response = await chrome.runtime.sendMessage({
@@ -139,25 +144,42 @@ async function showDetectedMediaFallback() {
     info.className = "detected-media-info";
     const isStream = /\.(m3u8|mpd)(\?|$)/i.test(item.url);
     const sizeLabel = formatBytes(item.size);
+    const shortUrl = item.url.length > 42 ? item.url.slice(0, 39) + "..." : item.url;
     info.title = item.url;
-    info.textContent = `${isStream ? "Stream" : "Arquivo"} ${sizeLabel ? "· " + sizeLabel : ""} · ${item.url}`;
+    info.textContent = `${isStream ? "Stream" : "Arquivo"}${sizeLabel ? " · " + sizeLabel : ""} · ${shortUrl}`;
 
-    const btn = document.createElement("button");
-    btn.className = "btn btn-primary";
-    btn.textContent = "Usar essa URL";
-    btn.addEventListener("click", () => {
-      els.url.value = item.url;
-      clearError();
-      els.detectedMedia.hidden = true;
-      analyzeVideo();
-    });
+    const actions = document.createElement("div");
+    actions.className = "detected-media-actions";
+
+    const btnDownload = document.createElement("button");
+    btnDownload.className = "btn btn-success";
+    btnDownload.textContent = "Baixar";
+    btnDownload.title = "Baixa direto na melhor qualidade (MP4)";
+    btnDownload.addEventListener("click", () => downloadDetectedMedia(item.url));
+
+    const btnUse = document.createElement("button");
+    btnUse.className = "btn btn-primary";
+    btnUse.textContent = "Analisar";
+    btnUse.title = "Analisa essa URL para escolher qualidade/formato";
+    btnUse.addEventListener("click", () => analyzeVideo(item.url));
+
+    actions.appendChild(btnDownload);
+    actions.appendChild(btnUse);
 
     row.appendChild(info);
-    row.appendChild(btn);
+    row.appendChild(actions);
     els.detectedMediaList.appendChild(row);
   }
 
   els.detectedMedia.hidden = false;
+}
+
+// Baixa diretamente uma URL de midia detectada, sem passar pela tela de
+// analise (usa qualidade "best" e formato mp4 como padrao razoavel).
+async function downloadDetectedMedia(url) {
+  clearError();
+  els.url.value = url;
+  await startDownload({ quality: "best", format: "mp4" });
 }
 
 function renderVideoInfo(info) {
@@ -181,11 +203,11 @@ function renderVideoInfo(info) {
   els.videoInfo.hidden = false;
 }
 
-async function startDownload() {
+async function startDownload(overrides) {
   clearError();
   const url = els.url.value.trim();
-  const quality = els.qualitySelect.value;
-  const format = els.formatSelect.value;
+  const quality = (overrides && overrides.quality) || els.qualitySelect.value;
+  const format = (overrides && overrides.format) || els.formatSelect.value;
 
   setBusy(els.btnDownload, true);
   els.btnDownload.textContent = "Iniciando...";
@@ -209,7 +231,7 @@ async function startDownload() {
     els.progressSection.hidden = false;
     updateProgressUI({ status: "queued", progress: 0 });
 
-    chrome.runtime.sendMessage({ type: "TRACK_JOB", jobId: currentJobId });
+    chrome.runtime.sendMessage({ type: "TRACK_JOB", jobId: currentJobId, tabId: currentTabId });
   } catch (err) {
     showError("Nao foi possivel conectar a API para iniciar o download.");
     setBusy(els.btnDownload, false, "BAIXAR");
@@ -220,6 +242,7 @@ function updateProgressUI(state) {
   const progress = Math.max(0, Math.min(100, state.progress || 0));
   els.progressFill.style.width = `${progress}%`;
   els.progressPercent.textContent = `${progress}%`;
+  els.progressSection.hidden = false;
 
   const labels = {
     queued: "Na fila...",
@@ -244,16 +267,29 @@ chrome.runtime.onMessage.addListener((message) => {
   if (message.type === "JOB_UPDATE" && message.jobId === currentJobId) {
     updateProgressUI(message);
   }
+  if (message.type === "MEDIA_UPDATE" && message.tabId === currentTabId) {
+    refreshDetectedMedia();
+  }
 });
 
+// Ao reabrir o popup (ex: depois de minimizar a janela e o service worker
+// ter sido reiniciado), recupera qual foi o ultimo job desta aba e restaura
+// a barra de progresso com o estado persistido em chrome.storage.session.
 async function restoreJobStateIfAny() {
-  if (!currentJobId) return;
-  chrome.runtime.sendMessage({ type: "GET_JOB_STATE", jobId: currentJobId }, (response) => {
-    if (response && response.state) {
-      els.progressSection.hidden = false;
-      updateProgressUI(response.state);
-    }
+  const lastJobResponse = await chrome.runtime.sendMessage({
+    type: "GET_LAST_JOB_FOR_TAB",
+    tabId: currentTabId,
   });
+
+  const jobId = lastJobResponse && lastJobResponse.jobId;
+  if (!jobId) return;
+
+  currentJobId = jobId;
+
+  const stateResponse = await chrome.runtime.sendMessage({ type: "GET_JOB_STATE", jobId });
+  if (stateResponse && stateResponse.state) {
+    updateProgressUI(stateResponse.state);
+  }
 }
 
 async function init() {
@@ -261,10 +297,10 @@ async function init() {
   currentTabId = tab ? tab.id : null;
   els.url.value = (tab && tab.url) || "";
 
-  els.btnAnalyze.addEventListener("click", analyzeVideo);
-  els.btnDownload.addEventListener("click", startDownload);
+  els.btnAnalyze.addEventListener("click", () => analyzeVideo());
+  els.btnDownload.addEventListener("click", () => startDownload());
 
-  await restoreJobStateIfAny();
+  await Promise.all([refreshDetectedMedia(), restoreJobStateIfAny()]);
 }
 
 init();
