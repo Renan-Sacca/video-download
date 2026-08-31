@@ -174,22 +174,77 @@ input[type="text"] {
   flex: 1;
 }
 
-.progress-section {
+.downloads-section {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 8px;
   border-top: 1px solid var(--color-border);
   padding-top: 12px;
 }
 
-.progress-label {
+.downloads-title {
   font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text);
+  margin: 0;
+}
+
+.downloads-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.download-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: #fafafa;
+}
+
+.download-item-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.download-item-title {
+  font-size: 11px;
+  color: var(--color-text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.download-item-close {
+  border: none;
+  background: none;
+  color: var(--color-muted);
+  cursor: pointer;
+  font-size: 13px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
+.download-item-close:hover {
+  color: var(--color-danger);
+}
+
+.progress-label {
+  font-size: 11px;
   color: var(--color-muted);
   margin: 0;
 }
 
 .progress-bar {
-  height: 10px;
+  height: 8px;
   border-radius: 999px;
   background: #eceff3;
   overflow: hidden;
@@ -202,8 +257,16 @@ input[type="text"] {
   transition: width 0.2s ease-in-out;
 }
 
+.progress-fill.status-finished {
+  background: var(--color-success);
+}
+
+.progress-fill.status-error {
+  background: var(--color-danger);
+}
+
 .progress-percent {
-  font-size: 12px;
+  font-size: 11px;
   color: var(--color-muted);
   margin: 0;
   text-align: right;

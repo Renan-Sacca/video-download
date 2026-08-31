@@ -5,9 +5,14 @@
 // 3. envia para /api/info ao clicar em "Analisar"
 // 4. mostra titulo, thumbnail e formatos disponiveis
 // 5. ao clicar em "Baixar", envia para /api/download e acompanha o job_id
-//    (delegando o polling ao background.js, que persiste o estado em
-//    chrome.storage.session - assim o progresso sobrevive a reinicios do
-//    service worker e a reaberturas do popup, ex: apos minimizar a janela)
+//
+// Downloads sao uma LISTA GLOBAL da extensao (nao amarrados a nenhuma
+// aba/pagina especifica): o estado vive em background.js
+// (chrome.storage.session), e o popup so pede "todos os jobs conhecidos"
+// (GET_ALL_JOBS) sempre que abre ou recebe um JOB_UPDATE. Isso garante que
+// trocar de aba, navegar para outra pagina ou fechar a aba de origem do
+// video NAO faz o progresso desaparecer - ele so some quando o download
+// termina e o usuario o remove da lista, ou quando o navegador fecha.
 
 const { API_BASE_URL, API_KEY } = window.VIDEODL_CONFIG;
 
@@ -21,15 +26,12 @@ const els = {
   qualitySelect: document.getElementById("quality-select"),
   formatSelect: document.getElementById("format-select"),
   btnDownload: document.getElementById("btn-download"),
-  progressSection: document.getElementById("progress-section"),
-  progressLabel: document.getElementById("progress-label"),
-  progressFill: document.getElementById("progress-fill"),
-  progressPercent: document.getElementById("progress-percent"),
   detectedMedia: document.getElementById("detected-media"),
   detectedMediaList: document.getElementById("detected-media-list"),
+  downloadsSection: document.getElementById("downloads-section"),
+  downloadsList: document.getElementById("downloads-list"),
 };
 
-let currentJobId = null;
 let currentTabId = null;
 
 function apiHeaders() {
@@ -223,74 +225,111 @@ async function startDownload(overrides) {
 
     if (!res.ok) {
       showError(data.detail || `Erro ao iniciar o download (HTTP ${res.status}).`);
-      setBusy(els.btnDownload, false, "BAIXAR");
       return;
     }
 
-    currentJobId = data.job_id;
-    els.progressSection.hidden = false;
-    updateProgressUI({ status: "queued", progress: 0 });
-
-    chrome.runtime.sendMessage({ type: "TRACK_JOB", jobId: currentJobId, tabId: currentTabId });
+    chrome.runtime.sendMessage({ type: "TRACK_JOB", jobId: data.job_id, sourceUrl: url });
+    await refreshDownloadsList();
   } catch (err) {
     showError("Nao foi possivel conectar a API para iniciar o download.");
+  } finally {
     setBusy(els.btnDownload, false, "BAIXAR");
   }
 }
 
-function updateProgressUI(state) {
-  const progress = Math.max(0, Math.min(100, state.progress || 0));
-  els.progressFill.style.width = `${progress}%`;
-  els.progressPercent.textContent = `${progress}%`;
-  els.progressSection.hidden = false;
-
+function statusLabel(status) {
   const labels = {
     queued: "Na fila...",
     downloading: "Baixando...",
     processing: "Processando (FFmpeg)...",
-    finished: "Concluido! Salvando arquivo...",
-    error: "Erro no download.",
+    finished: "Concluido",
+    error: "Erro",
   };
-  els.progressLabel.textContent = labels[state.status] || "Progresso:";
+  return labels[status] || status;
+}
 
-  if (state.status === "finished") {
-    setBusy(els.btnDownload, false, "BAIXAR");
+function shortenUrl(url, max = 46) {
+  if (!url) return "";
+  return url.length > max ? url.slice(0, max - 3) + "..." : url;
+}
+
+// Renderiza a lista completa de downloads conhecidos pela extensao
+// (independente de aba/pagina). Chamada ao abrir o popup e sempre que um
+// JOB_UPDATE chega do background.js.
+function renderDownloadsList(jobs) {
+  els.downloadsList.innerHTML = "";
+
+  if (!jobs || jobs.length === 0) {
+    els.downloadsSection.hidden = true;
+    return;
   }
 
-  if (state.status === "error") {
-    showError(state.error || "Ocorreu um erro durante o download.");
-    setBusy(els.btnDownload, false, "BAIXAR");
+  for (const job of jobs) {
+    const item = document.createElement("div");
+    item.className = "download-item";
+
+    const header = document.createElement("div");
+    header.className = "download-item-header";
+
+    const title = document.createElement("span");
+    title.className = "download-item-title";
+    title.title = job.filename || job.sourceUrl || job.jobId;
+    title.textContent = job.filename || shortenUrl(job.sourceUrl) || job.jobId;
+
+    const closeBtn = document.createElement("button");
+    closeBtn.className = "download-item-close";
+    closeBtn.textContent = "✕";
+    closeBtn.title = "Remover da lista";
+    closeBtn.addEventListener("click", async () => {
+      await chrome.runtime.sendMessage({ type: "REMOVE_JOB", jobId: job.jobId });
+      await refreshDownloadsList();
+    });
+
+    header.appendChild(title);
+    header.appendChild(closeBtn);
+
+    const progress = Math.max(0, Math.min(100, job.progress || 0));
+
+    const label = document.createElement("p");
+    label.className = "progress-label";
+    label.textContent =
+      job.status === "error" ? job.error || "Erro no download." : statusLabel(job.status);
+
+    const bar = document.createElement("div");
+    bar.className = "progress-bar";
+    const fill = document.createElement("div");
+    fill.className = `progress-fill status-${job.status}`;
+    fill.style.width = `${progress}%`;
+    bar.appendChild(fill);
+
+    const percent = document.createElement("p");
+    percent.className = "progress-percent";
+    percent.textContent = `${progress}%`;
+
+    item.appendChild(header);
+    item.appendChild(label);
+    item.appendChild(bar);
+    item.appendChild(percent);
+
+    els.downloadsList.appendChild(item);
   }
+
+  els.downloadsSection.hidden = false;
+}
+
+async function refreshDownloadsList() {
+  const response = await chrome.runtime.sendMessage({ type: "GET_ALL_JOBS" });
+  renderDownloadsList((response && response.jobs) || []);
 }
 
 chrome.runtime.onMessage.addListener((message) => {
-  if (message.type === "JOB_UPDATE" && message.jobId === currentJobId) {
-    updateProgressUI(message);
+  if (message.type === "JOB_UPDATE") {
+    refreshDownloadsList();
   }
   if (message.type === "MEDIA_UPDATE" && message.tabId === currentTabId) {
     refreshDetectedMedia();
   }
 });
-
-// Ao reabrir o popup (ex: depois de minimizar a janela e o service worker
-// ter sido reiniciado), recupera qual foi o ultimo job desta aba e restaura
-// a barra de progresso com o estado persistido em chrome.storage.session.
-async function restoreJobStateIfAny() {
-  const lastJobResponse = await chrome.runtime.sendMessage({
-    type: "GET_LAST_JOB_FOR_TAB",
-    tabId: currentTabId,
-  });
-
-  const jobId = lastJobResponse && lastJobResponse.jobId;
-  if (!jobId) return;
-
-  currentJobId = jobId;
-
-  const stateResponse = await chrome.runtime.sendMessage({ type: "GET_JOB_STATE", jobId });
-  if (stateResponse && stateResponse.state) {
-    updateProgressUI(stateResponse.state);
-  }
-}
 
 async function init() {
   const tab = await getCurrentTab();
@@ -300,7 +339,7 @@ async function init() {
   els.btnAnalyze.addEventListener("click", () => analyzeVideo());
   els.btnDownload.addEventListener("click", () => startDownload());
 
-  await Promise.all([refreshDetectedMedia(), restoreJobStateIfAny()]);
+  await Promise.all([refreshDetectedMedia(), refreshDownloadsList()]);
 }
 
 init();

@@ -18,10 +18,15 @@
 
 importScripts("config.js");
 
-const STORAGE_KEY_JOBS = "videodl_jobs"; // { [jobId]: {status, progress, error, downloadUrl, filename} }
+const STORAGE_KEY_JOBS = "videodl_jobs"; // { [jobId]: {status, progress, error, downloadUrl, filename, sourceUrl, startedAt} }
 const STORAGE_KEY_MEDIA = "videodl_media"; // { [tabId]: [{url, contentType, size, timestamp}] }
-const STORAGE_KEY_LAST_JOB = "videodl_last_job"; // { [tabId]: jobId }
 const KEEPALIVE_ALARM = "videodl-keepalive";
+
+// Numero maximo de jobs mantidos no historico. Downloads sao uma lista
+// global da extensao (nao amarrados a nenhuma aba especifica), visivel em
+// qualquer pagina, para que trocar de aba ou fechar a aba de origem do
+// video nao faca o progresso "desaparecer" do popup.
+const MAX_JOBS_HISTORY = 15;
 
 // ---------------------------------------------------------------------------
 // Estado de jobs (persistido em chrome.storage.session)
@@ -40,8 +45,34 @@ async function getJob(jobId) {
 async function setJob(jobId, state) {
   const jobs = await getJobs();
   jobs[jobId] = { ...jobs[jobId], ...state };
+  await trimJobHistory(jobs);
   await chrome.storage.session.set({ [STORAGE_KEY_JOBS]: jobs });
   return jobs[jobId];
+}
+
+// Mantem a lista de jobs num tamanho razoavel: quando excede o limite,
+// remove primeiro os jobs mais antigos que ja terminaram (finished/error),
+// preservando sempre os que ainda estao em andamento.
+async function trimJobHistory(jobs) {
+  const entries = Object.entries(jobs);
+  if (entries.length <= MAX_JOBS_HISTORY) return;
+
+  const removable = entries
+    .filter(([, s]) => ["finished", "error"].includes(s.status))
+    .sort((a, b) => (a[1].startedAt || 0) - (b[1].startedAt || 0));
+
+  let excess = entries.length - MAX_JOBS_HISTORY;
+  for (const [id] of removable) {
+    if (excess <= 0) break;
+    delete jobs[id];
+    excess--;
+  }
+}
+
+async function removeJob(jobId) {
+  const jobs = await getJobs();
+  delete jobs[jobId];
+  await chrome.storage.session.set({ [STORAGE_KEY_JOBS]: jobs });
 }
 
 async function listActiveJobIds() {
@@ -49,6 +80,13 @@ async function listActiveJobIds() {
   return Object.entries(jobs)
     .filter(([, s]) => s.status && !["finished", "error"].includes(s.status))
     .map(([id]) => id);
+}
+
+async function listAllJobs() {
+  const jobs = await getJobs();
+  return Object.entries(jobs)
+    .map(([jobId, state]) => ({ jobId, ...state }))
+    .sort((a, b) => (b.startedAt || 0) - (a.startedAt || 0));
 }
 
 function broadcastUpdate(jobId, state) {
@@ -343,18 +381,14 @@ chrome.tabs.onUpdated.addListener((tabId, changeInfo) => {
 // Mensagens do popup
 // ---------------------------------------------------------------------------
 
-async function setLastJobForTab(tabId, jobId) {
-  if (tabId == null) return;
-  const data = await chrome.storage.session.get(STORAGE_KEY_LAST_JOB);
-  const byTab = data[STORAGE_KEY_LAST_JOB] || {};
-  byTab[tabId] = jobId;
-  await chrome.storage.session.set({ [STORAGE_KEY_LAST_JOB]: byTab });
-}
-
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   if (message.type === "TRACK_JOB") {
-    setJob(message.jobId, { status: "queued", progress: 0 }).then(async () => {
-      await setLastJobForTab(message.tabId, message.jobId);
+    setJob(message.jobId, {
+      status: "queued",
+      progress: 0,
+      sourceUrl: message.sourceUrl || null,
+      startedAt: Date.now(),
+    }).then(() => {
       pollJob(message.jobId);
       sendResponse({ ok: true });
     });
@@ -366,11 +400,17 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     return true;
   }
 
-  if (message.type === "GET_LAST_JOB_FOR_TAB") {
-    chrome.storage.session.get(STORAGE_KEY_LAST_JOB).then((data) => {
-      const byTab = data[STORAGE_KEY_LAST_JOB] || {};
-      sendResponse({ ok: true, jobId: byTab[message.tabId] || null });
-    });
+  // Retorna TODOS os downloads conhecidos pela extensao (independente da
+  // aba/pagina em que o popup foi aberto), do mais recente para o mais
+  // antigo. E o que faz o progresso "seguir" o usuario mesmo trocando de
+  // aba ou fechando a pagina de origem do video.
+  if (message.type === "GET_ALL_JOBS") {
+    listAllJobs().then((jobs) => sendResponse({ ok: true, jobs }));
+    return true;
+  }
+
+  if (message.type === "REMOVE_JOB") {
+    removeJob(message.jobId).then(() => sendResponse({ ok: true }));
     return true;
   }
 

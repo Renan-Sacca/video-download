@@ -217,13 +217,19 @@ globalThis.VIDEODL_CONFIG = {
 **Persistência do progresso**: o Chrome encerra o service worker da
 extensão após ~30s de inatividade ou por pressão de memória (minimizar a
 janela, por exemplo, pode disparar isso). Para que o progresso do download
-e os vídeos detectados não se percam quando isso acontece, ambos são
-persistidos em `chrome.storage.session` (sobrevive a reinícios do service
-worker, só é limpo quando o navegador fecha de fato) em vez de ficarem só
-em memória. Um `chrome.alarms` periódico (a cada 1 minuto, o mínimo
-permitido pelo Chrome) acorda o worker e retoma o polling de qualquer job
-ainda ativo, e o popup recupera o último job da aba atual sempre que é
-reaberto.
+não se perca quando isso acontece, o estado dos jobs é persistido em
+`chrome.storage.session` (sobrevive a reinícios do service worker, só é
+limpo quando o navegador fecha de fato) em vez de ficar só em memória. Um
+`chrome.alarms` periódico (a cada 1 minuto, o mínimo permitido pelo Chrome)
+acorda o worker e retoma o polling de qualquer job ainda ativo.
+
+**Downloads não ficam amarrados a uma aba**: a seção "Downloads" no popup é
+uma lista global da extensão, não vinculada à aba/página onde o download
+foi iniciado. Trocar de aba, navegar para outra página ou fechar a aba de
+origem do vídeo não faz o progresso desaparecer — ele continua visível em
+"Downloads" ao reabrir o popup em qualquer aba, até você removê-lo da lista
+(botão ✕) ou fechar o navegador. O histórico guarda até 15 downloads,
+descartando primeiro os mais antigos já concluídos.
 
 ## 3. Formatos e qualidade
 
