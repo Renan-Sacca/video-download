@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Download Helper</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>
+        <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        Video Download Helper
+      </h1>
+    </header>
+
+    <div id="loading" class="loading">
+      <div class="spinner"></div>
+      <p>Procurando vídeos...</p>
+    </div>
+
+    <div id="no-videos" class="no-videos" style="display: none;">
+      <svg class="icon-large" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+        <polygon points="23 7 16 12 23 17 23 7"></polygon>
+        <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+      </svg>
+      <p>Nenhum vídeo detectado nesta página</p>
+      <small>Navegue em uma página com vídeos ou reproduza um vídeo</small>
+    </div>
+
+    <div id="videos-list" class="videos-list" style="display: none;">
+      <!-- Vídeos serão inseridos aqui -->
+    </div>
+
+    <footer id="footer" style="display: none;">
+      <button id="clear-btn" class="btn-secondary">Limpar Lista</button>
+      <button id="refresh-btn" class="btn-primary">Atualizar</button>
+    </footer>
+
+    <div class="manual-section">
+      <div class="manual-toggle" id="manual-toggle">
+        🔗 Colar URL de vídeo manualmente (site não detectado)
+      </div>
+      <div class="manual-form" id="manual-form" style="display: none;">
+        <input type="text" id="manual-url" placeholder="Cole a URL do vídeo ou .m3u8 aqui" />
+        <button id="manual-download-btn" class="btn-primary">Baixar</button>
+        <small>
+          Dica: aperte play no vídeo do site, abra o DevTools (F12) → aba
+          <b>Network</b> → filtre por <b>Media</b> ou <b>m3u8</b> e copie a URL.
+        </small>
+      </div>
+    </div>
+  </div>
+
+  <script src="popup.js"></script>
+</body>
+</html>
