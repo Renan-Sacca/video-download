@@ -22,9 +22,12 @@ const els = {
   progressLabel: document.getElementById("progress-label"),
   progressFill: document.getElementById("progress-fill"),
   progressPercent: document.getElementById("progress-percent"),
+  detectedMedia: document.getElementById("detected-media"),
+  detectedMediaList: document.getElementById("detected-media-list"),
 };
 
 let currentJobId = null;
+let currentTabId = null;
 
 function apiHeaders() {
   return {
@@ -56,9 +59,9 @@ function qualityOptionLabel(value) {
   return `${value}p`;
 }
 
-async function getCurrentTabUrl() {
+async function getCurrentTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-  return tab ? tab.url : "";
+  return tab || null;
 }
 
 async function analyzeVideo() {
@@ -72,6 +75,7 @@ async function analyzeVideo() {
   setBusy(els.btnAnalyze, true);
   els.btnAnalyze.textContent = "Analisando...";
   els.videoInfo.hidden = true;
+  els.detectedMedia.hidden = true;
 
   try {
     const res = await fetch(`${API_BASE_URL}/api/info`, {
@@ -84,6 +88,10 @@ async function analyzeVideo() {
 
     if (!res.ok) {
       showError(data.detail || `Erro ao analisar o video (HTTP ${res.status}).`);
+      // Fallback: o site pode nao ser suportado diretamente (ex: player em
+      // iframe de terceiros com extrator desatualizado). Mostra os videos
+      // que o navegador ja carregou de verdade na aba, para download manual.
+      await showDetectedMediaFallback();
       return;
     }
 
@@ -93,6 +101,63 @@ async function analyzeVideo() {
   } finally {
     setBusy(els.btnAnalyze, false, "Analisar");
   }
+}
+
+function formatBytes(bytes) {
+  if (!bytes) return "";
+  const units = ["B", "KB", "MB", "GB"];
+  let size = bytes;
+  let i = 0;
+  while (size >= 1024 && i < units.length - 1) {
+    size /= 1024;
+    i++;
+  }
+  return `${size.toFixed(1)} ${units[i]}`;
+}
+
+async function showDetectedMediaFallback() {
+  if (!currentTabId) return;
+
+  const response = await chrome.runtime.sendMessage({
+    type: "GET_DETECTED_MEDIA",
+    tabId: currentTabId,
+  });
+
+  const media = (response && response.media) || [];
+  els.detectedMediaList.innerHTML = "";
+
+  if (media.length === 0) {
+    els.detectedMedia.hidden = true;
+    return;
+  }
+
+  for (const item of media) {
+    const row = document.createElement("div");
+    row.className = "detected-media-item";
+
+    const info = document.createElement("span");
+    info.className = "detected-media-info";
+    const isStream = /\.(m3u8|mpd)(\?|$)/i.test(item.url);
+    const sizeLabel = formatBytes(item.size);
+    info.title = item.url;
+    info.textContent = `${isStream ? "Stream" : "Arquivo"} ${sizeLabel ? "· " + sizeLabel : ""} · ${item.url}`;
+
+    const btn = document.createElement("button");
+    btn.className = "btn btn-primary";
+    btn.textContent = "Usar essa URL";
+    btn.addEventListener("click", () => {
+      els.url.value = item.url;
+      clearError();
+      els.detectedMedia.hidden = true;
+      analyzeVideo();
+    });
+
+    row.appendChild(info);
+    row.appendChild(btn);
+    els.detectedMediaList.appendChild(row);
+  }
+
+  els.detectedMedia.hidden = false;
 }
 
 function renderVideoInfo(info) {
@@ -192,8 +257,9 @@ async function restoreJobStateIfAny() {
 }
 
 async function init() {
-  const tabUrl = await getCurrentTabUrl();
-  els.url.value = tabUrl || "";
+  const tab = await getCurrentTab();
+  currentTabId = tab ? tab.id : null;
+  els.url.value = (tab && tab.url) || "";
 
   els.btnAnalyze.addEventListener("click", analyzeVideo);
   els.btnDownload.addEventListener("click", startDownload);

@@ -192,6 +192,16 @@ globalThis.VIDEODL_CONFIG = {
    automaticamente.
 3. Clique em **Analisar**: a extensão chama `POST /api/info` e mostra
    título, thumbnail e qualidades disponíveis.
+   - Se a página não for suportada diretamente pelo yt-dlp (comum em sites
+     que embutem o player em um iframe de terceiros, ex: Blogger, com
+     extrator desatualizado), a extensão mostra uma lista de "Vídeos
+     detectados no tráfego da página" — URLs de mídia (.mp4/.m3u8/.mpd) que
+     o próprio navegador já carregou em texto claro ao reproduzir o vídeo.
+     Clique em "Usar essa URL" para analisar/baixar por ela. Isso só
+     funciona para mídia servida sem criptografia (a grande maioria dos
+     sites); vídeo com DRM real (Widevine/FairPlay) chega cifrado e uma URL
+     sozinha não é suficiente para reproduzi-lo — este projeto não inclui
+     nem pretende incluir suporte a esse tipo de conteúdo.
 4. Escolha qualidade e formato, clique em **BAIXAR**.
 5. A extensão chama `POST /api/download`, recebe um `job_id` e delega o
    acompanhamento ao `background.js` (service worker), que faz polling em
@@ -224,3 +234,16 @@ worker enquanto ele estiver ativo).
   já foi removido pela limpeza automática — inicie o download novamente.
 - **CORS bloqueado no console do Chrome**: confira `CORS_ALLOW_ORIGIN_REGEX`
   no `.env` do backend; o padrão já aceita qualquer `chrome-extension://`.
+- **"Não foi possível obter informações deste vídeo" mas a lista de "vídeos
+  detectados" também vem vazia**: o vídeo pode estar atrás de proteção real
+  (DRM) ou o player ainda não carregou nenhum stream no momento em que você
+  clicou em "Analisar" — dê play no vídeo na aba e tente analisar de novo.
+
+## 5. Permissões da extensão
+
+A extensão pede `<all_urls>` + `webRequest` para poder observar, em
+qualquer aba, as requisições de rede que já ocorrem normalmente ao
+carregar um player de vídeo (usado apenas no fallback descrito na seção 2.3).
+Nenhuma URL de rede é enviada a nenhum lugar além da sua própria API
+configurada em `config.js`; a extensão não coleta nem transmite seu
+histórico de navegação.

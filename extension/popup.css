@@ -124,6 +124,53 @@ input[type="text"] {
   word-break: break-word;
 }
 
+.detected-media {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  border-top: 1px solid var(--color-border);
+  padding-top: 12px;
+}
+
+.detected-media-title {
+  font-size: 12px;
+  color: var(--color-muted);
+  margin: 0;
+}
+
+.detected-media-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 160px;
+  overflow-y: auto;
+}
+
+.detected-media-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 6px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius);
+  background: #fafafa;
+}
+
+.detected-media-info {
+  font-size: 11px;
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detected-media-item .btn {
+  padding: 6px 10px;
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
 .progress-section {
   display: flex;
   flex-direction: column;
